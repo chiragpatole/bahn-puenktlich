@@ -4,6 +4,10 @@ line-length = 110
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "SIM", "UP"]
 
+[tool.ruff.lint.per-file-ignores]
+# `spark` is provided by the Databricks pipeline runtime
+"pipelines/*" = ["F821"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
