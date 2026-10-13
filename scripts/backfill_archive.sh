@@ -15,6 +15,9 @@ DEST="${ARCHIVE_VOLUME:-dbfs:/Volumes/bahn/bronze/archive/monthly}"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
+# fs cp does not create missing folders in a volume
+databricks fs mkdir "$DEST"
+
 for month in "$@"; do
   file="data-${month}.parquet"
   echo "downloading $file"
