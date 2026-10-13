@@ -1,0 +1,26 @@
+eva,name,group
+8010255,Berlin Ostbahnhof,berlin_potsdam
+8011155,Berlin Alexanderplatz,berlin_potsdam
+8011306,Berlin Friedrichstraße,berlin_potsdam
+8011160,Berlin Hbf,berlin_potsdam
+8010406,Berlin Zoologischer Garten,berlin_potsdam
+8010403,Berlin-Charlottenburg,berlin_potsdam
+8010405,Berlin-Wannsee,berlin_potsdam
+8012666,Potsdam Hbf,berlin_potsdam
+8011113,Berlin Südkreuz,berlin
+8011102,Berlin Gesundbrunnen,berlin
+8010404,Berlin-Spandau,berlin
+8002549,Hamburg Hbf,hub
+8000261,München Hbf,hub
+8000105,Frankfurt(Main)Hbf,hub
+8000207,Köln Hbf,hub
+8000096,Stuttgart Hbf,hub
+8000152,Hannover Hbf,hub
+8010205,Leipzig Hbf,hub
+8010085,Dresden Hbf,hub
+8000284,Nürnberg Hbf,hub
+8000085,Düsseldorf Hbf,hub
+8000080,Dortmund Hbf,hub
+8000098,Essen Hbf,hub
+8000050,Bremen Hbf,hub
+8000244,Mannheim Hbf,hub
