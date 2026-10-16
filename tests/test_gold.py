@@ -39,10 +39,11 @@ def now():
 def stations(spark, tmp_path):
     f = tmp_path / "stations.csv"
     f.write_text(
-        "eva,name,group,parent_eva\n"
+        "eva,name,group,parent_eva,poll\n"
         "8011160,Berlin Hbf,berlin,\n"
         "8089021,Berlin Hbf (S-Bahn),berlin,8011160\n"
-        "8012666,Potsdam Hbf,berlin,\n",
+        "8012666,Potsdam Hbf,berlin,\n"
+        "8011155,Berlin Alexanderplatz,berlin,,no\n",
         encoding="utf-8",
     )
     return spark.createDataFrame(station_rows(f), STATION_SCHEMA)
@@ -150,5 +151,6 @@ def test_health_shows_station_numbers_without_stops(spark, tmp_path):
     st = stations(spark, tmp_path)
     health = collection_health(stop_events(ts, st, now=now()), st, now=now())
     got = sorted((r.eva, str(r.service_date), r.stops) for r in health.collect())
-    # today is not finished, so only 15 Oct is checked; Potsdam had nothing
+    # today is not finished, so only 15 Oct is checked; Potsdam had nothing;
+    # Alexanderplatz is not polled, so it is not expected to have stops
     assert got == [("8011160", "2026-10-15", 1), ("8012666", "2026-10-15", 0), ("8089021", "2026-10-15", 1)]

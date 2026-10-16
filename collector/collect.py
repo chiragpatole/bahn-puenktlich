@@ -39,6 +39,12 @@ def load_stations(path):
     return rows
 
 
+def polled(stations):
+    """Stations the collector calls. poll=no keeps a station in the list (gold needs it
+    as the parent of its parts) without spending API calls on a number that has no trains."""
+    return [s for s in stations if (s.get("poll") or "").strip().lower() != "no"]
+
+
 def plan_slices(now_utc, hours_ahead):
     """(yyMMdd, HH) pairs in German local time, starting with the current hour.
 
@@ -207,7 +213,7 @@ def run(args):
         base_url=env.get("DB_API_BASE_URL") or DEFAULT_BASE_URL,
         min_interval=args.min_interval,
     )
-    stations = load_stations(args.stations)
+    stations = polled(load_stations(args.stations))
     run_start = datetime.now(UTC)
     run_id = uuid.uuid4().hex
 
@@ -301,7 +307,7 @@ def check_stations(args):
     return 1 if problems else 0
 
 
-STATION_COLUMNS = ["eva", "name", "group", "parent_eva"]
+STATION_COLUMNS = ["eva", "name", "group", "parent_eva", "poll"]
 
 
 def expand_meta(args):
@@ -384,6 +390,19 @@ def prune_meta(args):
         line = f"{trains:5d}  {s['eva']:>8}  {s['name']}  -> {parents.get(s['parent_eva'])}  [{mix}]"
         (kept if trains >= args.min_stops else dropped).append(s)
         print(("keep " if trains >= args.min_stops else "drop ") + line)
+    # A big station whose trains all sit under its parts returns nothing under its own
+    # number. It stays in the list as the parent, but the collector stops calling it.
+    has_parts = {s["parent_eva"] for s in kept if s.get("parent_eva")}
+    for s in kept:
+        if s["eva"] not in has_parts:
+            continue
+        cats = seen.get(s["eva"], {})
+        trains = sum(n for c, n in cats.items() if c not in ROAD_CATEGORIES)
+        poll = "no" if trains < args.min_stops else ""
+        if poll != (s.get("poll") or ""):
+            print(f"{'stop polling' if poll else 'poll again'}  {s['eva']}  {s['name']}  "
+                  f"({trains} train stops under its own number)")
+        s["poll"] = poll
     if not args.dry_run:
         write_stations(args.stations, kept)
     verb = "would drop" if args.dry_run else "dropped"
@@ -411,7 +430,8 @@ def main(argv=None):
     p_meta = sub.add_parser("expand-meta", help="add meta station numbers to stations.csv")
     p_meta.set_defaults(func=expand_meta)
 
-    p_prune = sub.add_parser("prune-meta", help="drop sub-stations without train stops")
+    p_prune = sub.add_parser(
+        "prune-meta", help="drop sub-stations without trains, stop polling empty parent numbers")
     p_prune.add_argument("--raw-dir", default=str(REPO_ROOT / "data" / "raw"))
     p_prune.add_argument("--min-stops", type=int, default=1,
                          help="train stops (buses not counted) a sub-station needs to stay")

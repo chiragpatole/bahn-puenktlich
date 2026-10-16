@@ -24,7 +24,7 @@ ROAD = ["BUS", "SEV", "STR", "TRAM"]
 
 STATION_SCHEMA = (
     "eva string, eva_name string, parent_eva string, "
-    "station_eva string, station_name string, station_group string"
+    "station_eva string, station_name string, station_group string, polled boolean"
 )
 
 
@@ -38,7 +38,8 @@ def station_rows(path):
         parent = (r.get("parent_eva") or "").strip() or None
         station = parent or r["eva"]
         station_name = names.get(station, r["name"])
-        out.append((r["eva"], r["name"], parent, station, station_name, r.get("group") or None))
+        is_polled = (r.get("poll") or "").strip().lower() != "no"
+        out.append((r["eva"], r["name"], parent, station, station_name, r.get("group") or None, is_polled))
     return out
 
 
@@ -158,7 +159,8 @@ def collection_health(events, stations, now=None):
     )
     counts = collected.groupBy("eva", "service_date").agg(F.count("*").alias("stops"))
     return (
-        stations.select("eva", "eva_name", "station_eva", "station_name").crossJoin(days)
+        stations.where("polled")
+        .select("eva", "eva_name", "station_eva", "station_name").crossJoin(days)
         .join(counts, ["eva", "service_date"], "left")
         .withColumn("stops", F.coalesce(F.col("stops"), F.lit(0)))
     )

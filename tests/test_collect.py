@@ -260,5 +260,36 @@ def test_prune_meta_drops_empty_and_bus_only_parts(tmp_path, capsys):
     assert len(c.load_stations(f)) == 4
 
     assert c.main(["--stations", str(f), "prune-meta", "--raw-dir", str(tmp_path / "raw")]) == 0
-    assert [r["eva"] for r in c.load_stations(f)] == ["8011160", "8098160"]
+    rows = c.load_stations(f)
+    assert [r["eva"] for r in rows] == ["8011160", "8098160"]
+    assert rows[0]["poll"] == ""  # Berlin Hbf had its own ICE, keep polling it
     assert "BUS:2" in capsys.readouterr().out
+
+
+def test_parent_without_own_trains_stays_listed_but_is_not_polled(tmp_path, monkeypatch):
+    f = tmp_path / "stations.csv"
+    f.write_text(
+        "eva,name,group,parent_eva\n"
+        "8011155,Berlin Alexanderplatz,berlin,\n"
+        "8089001,Berlin Alexanderplatz (S),berlin,8011155\n"
+        "8012666,Potsdam Hbf,berlin,\n",
+        encoding="utf-8",
+    )
+    c.write_bundle([_plan("8011155"), _plan("8089001", "S", "S"), _plan("8012666")],
+                   tmp_path / "raw", "timetables/day=16/a.jsonl.gz")
+    assert c.main(["--stations", str(f), "prune-meta", "--raw-dir", str(tmp_path / "raw")]) == 0
+
+    rows = c.load_stations(f)
+    assert [(r["eva"], r["poll"]) for r in rows] == [
+        ("8011155", "no"), ("8089001", ""), ("8012666", "")]  # Potsdam has no parts: untouched
+    assert [s["eva"] for s in c.polled(rows)] == ["8089001", "8012666"]
+
+    session = FakeSession()
+    client = make_client(session)
+    monkeypatch.setattr(c, "TimetablesClient", lambda *a, **k: client)
+    for key, value in {"DB_CLIENT_ID": "id", "DB_API_KEY": "key", "DATABRICKS_HOST": "",
+                       "AZURE_STORAGE_ACCOUNT": ""}.items():
+        monkeypatch.setenv(key, value)
+    assert c.main(["--stations", str(f), "run", "--out-dir", str(tmp_path / "out"),
+                   "--min-interval", "0", "--hours-ahead", "0"]) == 0
+    assert not any("8011155" in url for _, url, _ in session.calls)
