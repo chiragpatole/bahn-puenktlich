@@ -166,20 +166,20 @@ def test_flixtrain_is_not_counted_as_db_long_distance(spark, tmp_path):
     assert out["i"].line_label == "ICE"
 
 
-def test_partial_days_and_first_stops_are_not_measured(spark, tmp_path):
+def test_partial_edge_days_and_first_stops_are_not_measured(spark, tmp_path):
     day = lambda d, h=8: datetime(2026, 10, d, h, 0, tzinfo=UTC)  # noqa: E731
-    rows = []
-    for d in (12, 13, 14):                                        # normal days: 4 stops
+    rows = [stop("edge", "8011160", arr=day(11))]                 # first day, 1 stop: partial
+    for d in (12, 14, 15):                                        # normal days: 4 stops
         rows += [stop(f"{d}-{i}", "8011160", arr=day(d)) for i in range(4)]
-    rows.append(stop("origin", "8011160", dep=day(13)))           # train starts here
-    rows.append(stop("thin", "8011160", arr=day(15)))             # only 1 stop: partial day
+    rows.append(stop("closure", "8011160", arr=day(13)))          # thin day in the middle: kept
+    rows.append(stop("origin", "8011160", dep=day(14)))           # train starts here
     rows += [stop(f"today-{i}", "8011160", arr=day(16, 6)) for i in range(4)]  # not finished
     ts = spark.createDataFrame(rows, TRAIN_STOPS)
     ev = stop_events(ts, stations(spark, tmp_path), now=now())
 
     days = {str(r.service_date): r.complete_day for r in ev.select("service_date", "complete_day").collect()}
-    assert days == {"2026-10-12": True, "2026-10-13": True, "2026-10-14": True,
-                    "2026-10-15": False, "2026-10-16": False}
+    assert days == {"2026-10-11": False, "2026-10-12": True, "2026-10-13": True,
+                    "2026-10-14": True, "2026-10-15": True, "2026-10-16": False}
     got = measured(ev)
-    assert got.count() == 12
-    assert got.where("stop_id = 'origin'").count() == 0
+    assert got.count() == 13
+    assert got.where("stop_id IN ('origin', 'edge')").count() == 0

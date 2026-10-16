@@ -22,9 +22,8 @@ PUNCTUAL_BELOW_MIN = 6
 LONG_DISTANCE = ["ICE", "IC", "EC", "ECE", "EN", "NJ", "RJ", "RJX", "TGV", "ES", "EST", "D"]
 # Long-distance trains of other companies. DB's published figure covers DB trains only.
 OTHER_OPERATOR = ["FLX", "WB"]
-# A station's day counts when it has at least this share of that station's usual
-# daily stops. Catches days a source only partly covers, e.g. the few stops of
-# 30 April that sit in the archive's May file, or the collector's first day.
+# The first or last day a source has for a station counts only with at least this
+# share of the station's usual daily stops (see complete_days).
 COMPLETE_DAY_SHARE = 0.5
 ROAD = ["BUS", "SEV", "STR", "TRAM"]
 
@@ -144,14 +143,28 @@ def stop_events(train_stops, stations, now=None, settle_minutes=60):
 
 
 def complete_days(events, now):
-    """(source, eva, service_date, complete_day): finished days with at least
-    COMPLETE_DAY_SHARE of the station's median daily stops in that source."""
+    """(source, eva, service_date, complete_day).
+
+    A day is complete once it is over, unless it is the first or last day a source
+    has for that station and holds less than COMPLETE_DAY_SHARE of the station's
+    median daily stops. Those edge days are partial by construction: the archive's
+    May file carries a few late trains of 30 April, the collector starts mid-day.
+
+    Thin days in the middle are kept. They are usually closures for construction
+    work (an S-Bahn tunnel shut for a weekend), which travellers live through and
+    DB's own figure counts too.
+    """
     daily = events.groupBy("source", "eva", "service_date").agg(F.count("*").alias("day_stops"))
-    usual = daily.groupBy("source", "eva").agg(F.percentile_approx("day_stops", 0.5).alias("median_stops"))
+    usual = daily.groupBy("source", "eva").agg(
+        F.percentile_approx("day_stops", 0.5).alias("median_stops"),
+        F.min("service_date").alias("first_day"),
+        F.max("service_date").alias("last_day"),
+    )
+    at_edge = F.col("service_date").isin(F.col("first_day"), F.col("last_day"))
+    thin = F.col("day_stops") < F.col("median_stops") * COMPLETE_DAY_SHARE
     return daily.join(usual, ["source", "eva"]).select(
         "source", "eva", "service_date",
-        ((F.col("service_date") < berlin_date(now))
-         & (F.col("day_stops") >= F.col("median_stops") * COMPLETE_DAY_SHARE)).alias("complete_day"),
+        ((F.col("service_date") < berlin_date(now)) & ~(at_edge & thin)).alias("complete_day"),
     )
 
 
