@@ -4,7 +4,9 @@ How punctual are Deutsche Bahn trains at Germany's big stations, if a cancelled 
 
 DB publishes one punctuality figure per month. A stop counts as punctual when the train arrives less than 6 minutes late, and cancelled trains are left out of the calculation. A train that never came does not make the figure worse. This project collects the timetable and change data itself, recomputes punctuality by station, line and hour of day, and reports two numbers side by side: DB's definition, and the same with cancellations counted as failures.
 
-![Dashboard](docs/img/dashboard.png)
+![Counters and weekly trend](docs/img/dashboard-overview.png)
+![Station by hour of day, long-distance trains](docs/img/dashboard-heatmap.png)
+![Worst lines](docs/img/dashboard-lines.png)
 
 ## What the data shows so far
 
