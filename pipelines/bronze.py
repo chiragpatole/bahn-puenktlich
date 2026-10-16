@@ -53,7 +53,13 @@ def timetables_raw():
     return with_file_info(stream)
 
 
-@dp.table(name="archive_stops", comment="Train stops from the piebro/deutsche-bahn-data archive (CC BY 4.0)")
+# The archive's times carry no time zone (German local time), so Spark reads them
+# as TIMESTAMP_NTZ. Bronze keeps them that way; silver converts to UTC.
+@dp.table(
+    name="archive_stops",
+    comment="Train stops from the piebro/deutsche-bahn-data archive (CC BY 4.0)",
+    table_properties={"delta.feature.timestampNtz": "supported"},
+)
 @dp.expect("has_station", "eva IS NOT NULL")
 def archive_stops():
     stream = (
