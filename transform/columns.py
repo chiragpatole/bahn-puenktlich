@@ -17,6 +17,15 @@ def berlin_to_utc(ntz_sql):
     )
 
 
+def normalize_eva(column):
+    """Station numbers as the Timetables API writes them: no leading zeros.
+
+    The archive stores Potsdam Hbf as '08012666', the API and the collector as
+    '8012666'. Without this, no archive stop ever joins to a collector stop.
+    """
+    return F.regexp_replace(F.trim(F.col(column).cast("string")), "^0+", "")
+
+
 def iris_time_to_utc(column):
     """The API's yyMMddHHmm strings (German local time) -> UTC instant."""
     return berlin_to_utc(f"to_timestamp_ntz({column}, 'yyMMddHHmm')")

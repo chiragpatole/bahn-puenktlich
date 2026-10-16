@@ -18,7 +18,7 @@ from pyspark.sql import functions as F
 from pyspark.sql import types as T
 
 import transform.iris as iris
-from transform.columns import berlin_to_utc, iris_time_to_utc, with_actuals_and_delays
+from transform.columns import berlin_to_utc, iris_time_to_utc, normalize_eva, with_actuals_and_delays
 
 CATALOG = spark.conf.get("bahn.catalog", "bahn")
 BRONZE = f"{CATALOG}.bronze"
@@ -113,7 +113,7 @@ def archive_stops():
     a = spark.readStream.table(f"{BRONZE}.archive_stops")
     return a.select(
         F.col("id").alias("stop_id"),
-        F.col("eva").cast("string").alias("eva"),
+        normalize_eva("eva").alias("eva"),
         "station_name",
         F.col("train_type").alias("category"),
         F.col("train_number").cast("string").alias("train_number"),

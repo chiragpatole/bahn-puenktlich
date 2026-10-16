@@ -15,7 +15,12 @@ if shutil.which("java") is None:
 from pyspark.sql import SparkSession  # noqa: E402
 from pyspark.sql import functions as F  # noqa: E402
 
-from transform.columns import berlin_to_utc, iris_time_to_utc, with_actuals_and_delays  # noqa: E402
+from transform.columns import (  # noqa: E402
+    berlin_to_utc,
+    iris_time_to_utc,
+    normalize_eva,
+    with_actuals_and_delays,
+)
 
 
 @pytest.fixture(scope="module")
@@ -86,3 +91,9 @@ def test_delays_cancellations_and_on_time(spark):
     assert out[1].arrival_delay_min is None
     assert out[2].arrival_delay_min is None
     assert out[2].departure_delay_min == -1
+
+
+def test_station_numbers_lose_leading_zeros(spark):
+    df = spark.createDataFrame([("08012666",), ("8012666",), (" 08011160 ",), (None,)], "eva string")
+    got = [r[0] for r in df.select(normalize_eva("eva")).collect()]
+    assert got == ["8012666", "8012666", "8011160", None]
