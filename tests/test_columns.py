@@ -12,7 +12,6 @@ import pytest
 pytest.importorskip("pyspark")
 if shutil.which("java") is None:
     pytest.skip("Spark needs Java, which is not installed here", allow_module_level=True)
-from pyspark.sql import SparkSession  # noqa: E402
 from pyspark.sql import functions as F  # noqa: E402
 
 from transform.columns import (  # noqa: E402
@@ -21,21 +20,6 @@ from transform.columns import (  # noqa: E402
     normalize_eva,
     with_actuals_and_delays,
 )
-
-
-@pytest.fixture(scope="module")
-def spark():
-    session = (
-        SparkSession.builder.master("local[1]")
-        .config("spark.ui.enabled", "false")
-        # macOS often cannot bind to its own hostname; stay on loopback
-        .config("spark.driver.bindAddress", "127.0.0.1")
-        .config("spark.driver.host", "127.0.0.1")
-        .config("spark.sql.shuffle.partitions", "1")
-        .getOrCreate()
-    )
-    yield session
-    session.stop()
 
 
 def utc(*args):
