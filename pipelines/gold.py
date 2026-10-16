@@ -1,8 +1,8 @@
 """Gold layer: punctuality per station, hour and line, in DB's definition and with cancellations.
 
 dim_station           every polled station number, mapped to the station it belongs to
-stop_events           one row per stop, measured once, with punctual / cancelled flags
-punctuality_daily     per day, station and product class (S-Bahn, regional, long distance)
+stop_events           one row per stop, with punctual / cancelled / is_origin / complete_day flags
+punctuality_daily     per day, station and product class (S-Bahn, regional, long distance, other operator)
 punctuality_by_hour   per station, class and hour of the day, over all data
 punctuality_by_line   per month and line
 collection_health     collector stops per station number and day, zeros included
@@ -15,7 +15,14 @@ from pathlib import Path
 from pyspark import pipelines as dp
 from pyspark.sql import functions as F
 
-from transform.gold import STATION_SCHEMA, collection_health, punctuality, station_rows, stop_events
+from transform.gold import (
+    STATION_SCHEMA,
+    collection_health,
+    measured,
+    punctuality,
+    station_rows,
+    stop_events,
+)
 
 CATALOG = spark.conf.get("bahn.catalog", "bahn")
 SILVER = f"{CATALOG}.silver"
@@ -55,12 +62,17 @@ def events():
     return spark.read.table(f"{GOLD}.stop_events")
 
 
+def measured_events():
+    # finished, fully covered days; first stops left out, as in DB's figure
+    return measured(events())
+
+
 @dp.materialized_view(
     name=f"{GOLD}.punctuality_daily",
     comment="Punctuality per day, station and product class",
 )
 def punctuality_daily():
-    return punctuality(events(), "service_date", "station_eva", "station_name", "product_class")
+    return punctuality(measured_events(), "service_date", "station_eva", "station_name", "product_class")
 
 
 @dp.materialized_view(
@@ -68,7 +80,7 @@ def punctuality_daily():
     comment="Punctuality per station, class and hour of day",
 )
 def punctuality_by_hour():
-    return punctuality(events(), "station_eva", "station_name", "product_class", "hour_local")
+    return punctuality(measured_events(), "station_eva", "station_name", "product_class", "hour_local")
 
 
 @dp.materialized_view(
@@ -76,7 +88,7 @@ def punctuality_by_hour():
     comment="Punctuality per month and line",
 )
 def punctuality_by_line():
-    monthly = events().withColumn("month", F.trunc("service_date", "month"))
+    monthly = measured_events().withColumn("month", F.trunc("service_date", "month"))
     return punctuality(monthly, "month", "product_class", "line_label")
 
 

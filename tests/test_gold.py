@@ -19,6 +19,7 @@ from transform.gold import (  # noqa: E402
     berlin_date,
     berlin_hour,
     collection_health,
+    measured,
     punctuality,
     station_rows,
     stop_events,
@@ -97,6 +98,7 @@ def test_stop_measured_at_arrival_or_departure_at_first_stop(spark, tmp_path):
     assert (out["c"].cancelled, out["c"].punctual) == (True, None)
     assert out["d"].punctual is True
     assert out["a"].hour_local == 10
+    assert (out["a"].is_origin, out["b"].is_origin) == (False, True)
 
 
 RECENT = datetime(2026, 10, 16, 11, 30, tzinfo=UTC)  # 30 min before "now"
@@ -154,3 +156,30 @@ def test_health_shows_station_numbers_without_stops(spark, tmp_path):
     # today is not finished, so only 15 Oct is checked; Potsdam had nothing;
     # Alexanderplatz is not polled, so it is not expected to have stops
     assert got == [("8011160", "2026-10-15", 1), ("8012666", "2026-10-15", 0), ("8089021", "2026-10-15", 1)]
+
+
+def test_flixtrain_is_not_counted_as_db_long_distance(spark, tmp_path):
+    ts = spark.createDataFrame([stop("f", "8011160", category="FLX", line=None, arr=T),
+                                stop("i", "8011160", category="ICE", line=None, arr=T)], TRAIN_STOPS)
+    out = {r.stop_id: r for r in stop_events(ts, stations(spark, tmp_path), now=now()).collect()}
+    assert (out["f"].product_class, out["i"].product_class) == ("other_operator", "long_distance")
+    assert out["i"].line_label == "ICE"
+
+
+def test_partial_days_and_first_stops_are_not_measured(spark, tmp_path):
+    day = lambda d, h=8: datetime(2026, 10, d, h, 0, tzinfo=UTC)  # noqa: E731
+    rows = []
+    for d in (12, 13, 14):                                        # normal days: 4 stops
+        rows += [stop(f"{d}-{i}", "8011160", arr=day(d)) for i in range(4)]
+    rows.append(stop("origin", "8011160", dep=day(13)))           # train starts here
+    rows.append(stop("thin", "8011160", arr=day(15)))             # only 1 stop: partial day
+    rows += [stop(f"today-{i}", "8011160", arr=day(16, 6)) for i in range(4)]  # not finished
+    ts = spark.createDataFrame(rows, TRAIN_STOPS)
+    ev = stop_events(ts, stations(spark, tmp_path), now=now())
+
+    days = {str(r.service_date): r.complete_day for r in ev.select("service_date", "complete_day").collect()}
+    assert days == {"2026-10-12": True, "2026-10-13": True, "2026-10-14": True,
+                    "2026-10-15": False, "2026-10-16": False}
+    got = measured(ev)
+    assert got.count() == 12
+    assert got.where("stop_id = 'origin'").count() == 0

@@ -19,7 +19,13 @@ PUNCTUAL_BELOW_MIN = 6
 
 # Train categories as IRIS writes them (<tl c="...">). S-Bahn gets its own class
 # because one S-Bahn station has more stops per hour than a long-distance hub.
-LONG_DISTANCE = ["ICE", "IC", "EC", "ECE", "EN", "NJ", "RJ", "RJX", "TGV", "ES", "EST", "FLX", "WB", "D"]
+LONG_DISTANCE = ["ICE", "IC", "EC", "ECE", "EN", "NJ", "RJ", "RJX", "TGV", "ES", "EST", "D"]
+# Long-distance trains of other companies. DB's published figure covers DB trains only.
+OTHER_OPERATOR = ["FLX", "WB"]
+# A station's day counts when it has at least this share of that station's usual
+# daily stops. Catches days a source only partly covers, e.g. the few stops of
+# 30 April that sit in the archive's May file, or the collector's first day.
+COMPLETE_DAY_SHARE = 0.5
 ROAD = ["BUS", "SEV", "STR", "TRAM"]
 
 STATION_SCHEMA = (
@@ -65,6 +71,7 @@ def product_class(category):
     return (
         F.when(c == "S", "s_bahn")
         .when(c.isin(LONG_DISTANCE), "long_distance")
+        .when(c.isin(OTHER_OPERATOR), "other_operator")
         .when(c.isin(ROAD), "road")
         .otherwise("regional")
     )
@@ -82,6 +89,10 @@ def line_label(category, line):
 
 def stop_events(train_stops, stations, now=None, settle_minutes=60):
     """One row per stop at a station we track, measured at arrival (departure at the first stop).
+
+    Flags for the aggregates (see measured()):
+    - is_origin: the train starts here. DB measures intermediate and final stops only.
+    - complete_day: the day is finished and this source covered it for this station.
 
     Rules:
     - road vehicles at bus stops in front of stations are dropped
@@ -102,6 +113,7 @@ def stop_events(train_stops, stations, now=None, settle_minutes=60):
             at_stop("planned_arrival", "planned_departure").alias("planned_time"),
             at_stop("arr_cancelled", "dep_cancelled").alias("cancelled"),
             at_stop("arrival_delay_min", "departure_delay_min").alias("delay_min"),
+            has_arr.alias("_has_arrival"),
         )
         .where("planned_time IS NOT NULL")
         .withColumn("product_class", product_class("category"))
@@ -119,12 +131,33 @@ def stop_events(train_stops, stations, now=None, settle_minutes=60):
         .drop("_day_has_collector")
     )
 
-    return (
+    ev = (
         ev.join(stations.select("eva", "station_eva", "station_name", "station_group"), "eva")
         .withColumn("cancelled", F.coalesce(F.col("cancelled"), F.lit(False)))
         .withColumn("punctual", F.when(~F.col("cancelled"), F.col("delay_min") < PUNCTUAL_BELOW_MIN))
         .withColumn("line_label", line_label("category", "line"))
+        .withColumn("is_origin", F.col("_has_arrival") == F.lit(False))
+        .drop("_has_arrival")
     )
+    return ev.join(complete_days(ev, now), ["source", "eva", "service_date"], "left").withColumn(
+        "complete_day", F.coalesce(F.col("complete_day"), F.lit(False)))
+
+
+def complete_days(events, now):
+    """(source, eva, service_date, complete_day): finished days with at least
+    COMPLETE_DAY_SHARE of the station's median daily stops in that source."""
+    daily = events.groupBy("source", "eva", "service_date").agg(F.count("*").alias("day_stops"))
+    usual = daily.groupBy("source", "eva").agg(F.percentile_approx("day_stops", 0.5).alias("median_stops"))
+    return daily.join(usual, ["source", "eva"]).select(
+        "source", "eva", "service_date",
+        ((F.col("service_date") < berlin_date(now))
+         & (F.col("day_stops") >= F.col("median_stops") * COMPLETE_DAY_SHARE)).alias("complete_day"),
+    )
+
+
+def measured(events):
+    """The stops the punctuality figures are computed from, following DB's method."""
+    return events.where("complete_day AND NOT is_origin")
 
 
 def punctuality(events, *keys):
