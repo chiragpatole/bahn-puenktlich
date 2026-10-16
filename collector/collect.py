@@ -250,31 +250,145 @@ def run(args):
     return 0
 
 
-def check_stations(args):
-    """Ask the API what each EVA number in stations.csv is called."""
+def _client_from_env():
     env = os.environ
-    client = TimetablesClient(env["DB_CLIENT_ID"], env["DB_API_KEY"],
-                              base_url=env.get("DB_API_BASE_URL") or DEFAULT_BASE_URL)
+    return TimetablesClient(env["DB_CLIENT_ID"], env["DB_API_KEY"],
+                            base_url=env.get("DB_API_BASE_URL") or DEFAULT_BASE_URL)
+
+
+def lookup_station(client, eva):
+    """(name, meta EVA numbers, error) for one station number.
+
+    Big stations are split across several numbers (e.g. Berlin Hbf upper level,
+    lower level and S-Bahn). The number people know can return empty timetables;
+    the trains live under the numbers listed in the station's meta attribute.
+    """
+    rec = client.get(f"station/{eva}")
+    if rec["status_code"] in (401, 403):
+        raise PermissionError(
+            f"API rejected the credentials ({rec['error']}). Check that the "
+            "application is subscribed to Timetables in the DB API Marketplace."
+        )
+    if rec["status_code"] != 200 or not rec["body"]:
+        return None, [], rec["error"]
+    node = ET.fromstring(rec["body"]).find("station")
+    if node is None:
+        return None, [], "no station in response"
+    meta = [m for m in (node.get("meta") or "").split("|") if m]
+    return node.get("name"), meta, None
+
+
+def check_stations(args):
+    """Ask the API what each EVA number in stations.csv is called, and flag
+    meta numbers that are not polled yet."""
+    client = _client_from_env()
+    stations = load_stations(args.stations)
+    known = {s["eva"] for s in stations}
     problems = 0
-    for station in load_stations(args.stations):
-        rec = client.get(f"station/{station['eva']}")
-        if rec["status_code"] in (401, 403):
-            raise PermissionError(
-                f"API rejected the credentials ({rec['error']}). Check that the "
-                "application is subscribed to Timetables in the DB API Marketplace."
-            )
-        found = None
-        if rec["status_code"] == 200 and rec["body"]:
-            node = ET.fromstring(rec["body"]).find("station")
-            if node is not None:
-                found = node.get("name")
+    for station in stations:
+        found, meta, error = lookup_station(client, station["eva"])
         ok = found is not None and found.casefold() == station["name"].casefold()
-        problems += not ok
+        missing = [m for m in meta if m not in known]
+        problems += (not ok) + bool(missing)
         line = f"{'ok ' if ok else 'FIX'}  {station['eva']}  csv={station['name']!r}  api={found!r}"
-        if rec["error"]:
-            line += f"  ({rec['error']})"
+        if error:
+            line += f"  ({error})"
+        if missing:
+            line += f"  meta not polled: {', '.join(missing)}"
         print(line)
+    if problems:
+        print("\nRun `python -m collector.collect expand-meta` to add missing meta stations.")
     return 1 if problems else 0
+
+
+STATION_COLUMNS = ["eva", "name", "group", "parent_eva"]
+
+
+def expand_meta(args):
+    """Add every meta station number to stations.csv, linked to its parent."""
+    client = _client_from_env()
+    stations = load_stations(args.stations)
+    known = {s["eva"] for s in stations}
+    added = []
+    for station in list(stations):
+        if station.get("parent_eva"):
+            continue
+        _, meta, _ = lookup_station(client, station["eva"])
+        for eva in meta:
+            if eva in known:
+                continue
+            name, _, error = lookup_station(client, eva)
+            if name is None:
+                print(f"skip {eva} (meta of {station['name']}): {error}")
+                continue
+            row = {"eva": eva, "name": name, "group": station.get("group", ""),
+                   "parent_eva": station["eva"]}
+            stations.append(row)
+            known.add(eva)
+            added.append(row)
+            print(f"add  {eva}  {name}  (part of {station['name']})")
+
+    write_stations(args.stations, stations)
+    print(f"{len(added)} stations added, {len(stations)} in total")
+    return 0
+
+
+def write_stations(path, stations):
+    with open(path, "w", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(fh, fieldnames=STATION_COLUMNS, extrasaction="ignore")
+        writer.writeheader()
+        for row in stations:
+            writer.writerow({col: row.get(col) or "" for col in STATION_COLUMNS})
+
+
+# Categories that are road vehicles. Meta lists also contain bus stops in front of
+# the station; their stops would mix bus punctuality into train punctuality.
+ROAD_CATEGORIES = {"BUS", "SEV", "STR", "TRAM", "FLX-BUS", "FLXB"}
+
+
+def count_stops_in_bundles(raw_dir):
+    """Per eva: Counter of train categories seen in the plan responses of local bundles."""
+    from collections import Counter, defaultdict
+
+    from transform.iris import parse_timetable
+
+    seen = defaultdict(Counter)
+    files = sorted(Path(raw_dir).rglob("*.jsonl.gz"))
+    for f in files:
+        with gzip.open(f, "rt", encoding="utf-8") as fh:
+            for line in fh:
+                rec = json.loads(line)
+                if rec.get("api_name") != "plan":
+                    continue
+                for stop in parse_timetable(rec.get("body")) or []:
+                    seen[rec["eva"]][(stop["category"] or "?").upper()] += 1
+    return seen, len(files)
+
+
+def prune_meta(args):
+    """Drop sub-stations that had no train stops in the local bundles."""
+    stations = load_stations(args.stations)
+    seen, n_files = count_stops_in_bundles(args.raw_dir)
+    if n_files == 0:
+        print(f"no bundles under {args.raw_dir}, run the collector first")
+        return 1
+    parents = {s["eva"]: s["name"] for s in stations}
+    kept, dropped = [], []
+    for s in stations:
+        if not s.get("parent_eva"):
+            kept.append(s)
+            continue
+        cats = seen.get(s["eva"], {})
+        trains = sum(n for c, n in cats.items() if c not in ROAD_CATEGORIES)
+        mix = " ".join(f"{c}:{n}" for c, n in sorted(cats.items(), key=lambda kv: -kv[1])) or "-"
+        line = f"{trains:5d}  {s['eva']:>8}  {s['name']}  -> {parents.get(s['parent_eva'])}  [{mix}]"
+        (kept if trains >= args.min_stops else dropped).append(s)
+        print(("keep " if trains >= args.min_stops else "drop ") + line)
+    if not args.dry_run:
+        write_stations(args.stations, kept)
+    verb = "would drop" if args.dry_run else "dropped"
+    print(f"{n_files} bundles read; {verb} {len(dropped)}, {len(kept)} stations left")
+    return 0
 
 
 def main(argv=None):
@@ -293,6 +407,16 @@ def main(argv=None):
 
     p_check = sub.add_parser("check-stations", help="verify stations.csv against the API")
     p_check.set_defaults(func=check_stations)
+
+    p_meta = sub.add_parser("expand-meta", help="add meta station numbers to stations.csv")
+    p_meta.set_defaults(func=expand_meta)
+
+    p_prune = sub.add_parser("prune-meta", help="drop sub-stations without train stops")
+    p_prune.add_argument("--raw-dir", default=str(REPO_ROOT / "data" / "raw"))
+    p_prune.add_argument("--min-stops", type=int, default=1,
+                         help="train stops (buses not counted) a sub-station needs to stay")
+    p_prune.add_argument("--dry-run", action="store_true", help="print only, leave stations.csv")
+    p_prune.set_defaults(func=prune_meta)
 
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")

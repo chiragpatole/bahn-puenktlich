@@ -195,3 +195,70 @@ def test_check_stations_shows_the_http_error(monkeypatch, capsys):
     monkeypatch.setenv("DB_API_BASE_URL", "")
     assert c.main(["check-stations"]) == 1
     assert "(HTTP 404)" in capsys.readouterr().out.splitlines()[0]
+
+
+STATION_XML = {
+    "8011160": '<stations><station name="Berlin Hbf" eva="8011160" meta="8098160|8089021"/></stations>',
+    "8098160": '<stations><station name="Berlin Hbf (tief)" eva="8098160"/></stations>',
+    "8089021": '<stations><station name="Berlin Hbf (S-Bahn)" eva="8089021" meta="8011160"/></stations>',
+    "8012666": '<stations><station name="Potsdam Hbf" eva="8012666"/></stations>',
+}
+
+
+class StationSession(FakeSession):
+    def get(self, url, **kwargs):
+        self.calls.append(("GET", url, kwargs))
+        return FakeResponse(200, STATION_XML[url.rsplit("/", 1)[1]])
+
+
+def test_expand_meta_adds_parts_of_big_stations(tmp_path, monkeypatch, capsys):
+    f = tmp_path / "stations.csv"
+    f.write_text("eva,name,group\n8011160,Berlin Hbf,berlin\n8012666,Potsdam Hbf,berlin\n", encoding="utf-8")
+    monkeypatch.setattr(c.requests, "Session", StationSession)
+    monkeypatch.setattr(c.time, "sleep", lambda s: None)
+    for key, value in {"DB_CLIENT_ID": "id", "DB_API_KEY": "key", "DB_API_BASE_URL": ""}.items():
+        monkeypatch.setenv(key, value)
+
+    assert c.main(["--stations", str(f), "expand-meta"]) == 0
+
+    rows = c.load_stations(f)
+    assert [(r["eva"], r["name"], r["parent_eva"]) for r in rows] == [
+        ("8011160", "Berlin Hbf", ""),
+        ("8012666", "Potsdam Hbf", ""),
+        ("8098160", "Berlin Hbf (tief)", "8011160"),
+        ("8089021", "Berlin Hbf (S-Bahn)", "8011160"),
+    ]
+    assert rows[2]["group"] == "berlin"
+
+    # running it again changes nothing
+    assert c.main(["--stations", str(f), "expand-meta"]) == 0
+    assert len(c.load_stations(f)) == 4
+
+
+def _plan(eva, *categories):
+    stops = "".join(f'<s id="{eva}-{i}"><tl c="{c}" n="{i}"/><dp pt="2610161400"/></s>'
+                    for i, c in enumerate(categories))
+    return {"api_name": "plan", "eva": eva, "body": f'<timetable station="x">{stops}</timetable>'}
+
+
+def test_prune_meta_drops_empty_and_bus_only_parts(tmp_path, capsys):
+    f = tmp_path / "stations.csv"
+    f.write_text(
+        "eva,name,group,parent_eva\n"
+        "8011160,Berlin Hbf,berlin,\n"
+        "8098160,Berlin Hbf (tief),berlin,8011160\n"
+        "8070952,Berlin Hbf (Invalidenstraße),berlin,8011160\n"
+        "8076116,Hamburg Hbf ZOB,hub,8011160\n",
+        encoding="utf-8",
+    )
+    records = [_plan("8011160", "ICE"), _plan("8098160", "ICE", "RE"),
+               _plan("8070952"), _plan("8076116", "Bus", "Bus")]
+    c.write_bundle(records, tmp_path / "raw", "timetables/day=16/a.jsonl.gz")
+
+    assert c.main(["--stations", str(f), "prune-meta", "--raw-dir", str(tmp_path / "raw"),
+                   "--dry-run"]) == 0
+    assert len(c.load_stations(f)) == 4
+
+    assert c.main(["--stations", str(f), "prune-meta", "--raw-dir", str(tmp_path / "raw")]) == 0
+    assert [r["eva"] for r in c.load_stations(f)] == ["8011160", "8098160"]
+    assert "BUS:2" in capsys.readouterr().out

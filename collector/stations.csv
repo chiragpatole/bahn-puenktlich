@@ -1,26 +1,46 @@
-eva,name,group
-8010255,Berlin Ostbahnhof,berlin_potsdam
-8011155,Berlin Alexanderplatz,berlin_potsdam
-8011306,Berlin Friedrichstraße,berlin_potsdam
-8011160,Berlin Hbf,berlin_potsdam
-8010406,Berlin Zoologischer Garten,berlin_potsdam
-8010403,Berlin-Charlottenburg,berlin_potsdam
-8010405,Berlin-Wannsee,berlin_potsdam
-8012666,Potsdam Hbf,berlin_potsdam
-8011113,Berlin Südkreuz,berlin
-8011102,Berlin Gesundbrunnen,berlin
-8010404,Berlin-Spandau,berlin
-8002549,Hamburg Hbf,hub
-8000261,München Hbf,hub
-8000105,Frankfurt(Main)Hbf,hub
-8000207,Köln Hbf,hub
-8000096,Stuttgart Hbf,hub
-8000152,Hannover Hbf,hub
-8010205,Leipzig Hbf,hub
-8010085,Dresden Hbf,hub
-8000284,Nürnberg Hbf,hub
-8000085,Düsseldorf Hbf,hub
-8000080,Dortmund Hbf,hub
-8000098,Essen Hbf,hub
-8000050,Bremen Hbf,hub
-8000244,Mannheim Hbf,hub
+eva,name,group,parent_eva
+8010255,Berlin Ostbahnhof,berlin_potsdam,
+8011155,Berlin Alexanderplatz,berlin_potsdam,
+8011306,Berlin Friedrichstraße,berlin_potsdam,
+8011160,Berlin Hbf,berlin_potsdam,
+8010406,Berlin Zoologischer Garten,berlin_potsdam,
+8010403,Berlin-Charlottenburg,berlin_potsdam,
+8010405,Berlin-Wannsee,berlin_potsdam,
+8012666,Potsdam Hbf,berlin_potsdam,
+8011113,Berlin Südkreuz,berlin,
+8011102,Berlin Gesundbrunnen,berlin,
+8010404,Berlin-Spandau,berlin,
+8002549,Hamburg Hbf,hub,
+8000261,München Hbf,hub,
+8000105,Frankfurt(Main)Hbf,hub,
+8000207,Köln Hbf,hub,
+8000096,Stuttgart Hbf,hub,
+8000152,Hannover Hbf,hub,
+8010205,Leipzig Hbf,hub,
+8010085,Dresden Hbf,hub,
+8000284,Nürnberg Hbf,hub,
+8000085,Düsseldorf Hbf,hub,
+8000080,Dortmund Hbf,hub,
+8000098,Essen Hbf,hub,
+8000050,Bremen Hbf,hub,
+8000244,Mannheim Hbf,hub,
+8089185,Berlin Ostbahnhof (S),berlin_potsdam,8010255
+8089001,Berlin Alexanderplatz (S),berlin_potsdam,8011155
+8089066,Berlin Friedrichstraße (S),berlin_potsdam,8011306
+8089021,Berlin Hbf (S-Bahn),berlin_potsdam,8011160
+8089522,Berlin Hbf (S-Bahn),berlin_potsdam,8011160
+8098160,Berlin Hbf,berlin_potsdam,8011160
+8089046,Berlin Zoologischer Garten (S),berlin_potsdam,8010406
+8089165,Berlin Charlottenburg (S),berlin_potsdam,8010403
+8089190,Berlin-Wannsee (S),berlin_potsdam,8010405
+8089184,Potsdam Hbf (S),berlin_potsdam,8012666
+8089073,Berlin Südkreuz (S),berlin,8011113
+8089015,Berlin Gesundbrunnen(S),berlin,8011102
+8089083,Berlin-Spandau (S),berlin,8010404
+8098549,Hamburg Hbf (S-Bahn),hub,8002549
+8098261,München Hbf Gl.27-36,hub,8000261
+8098262,München Hbf Gl.5-10,hub,8000261
+8098263,München Hbf (tief),hub,8000261
+8098105,Frankfurt Hbf (tief),hub,8000105
+8098096,Stuttgart Hbf (tief),hub,8000096
+8098205,Leipzig Hbf (tief),hub,8010205
