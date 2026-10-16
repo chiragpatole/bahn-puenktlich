@@ -1,9 +1,7 @@
 name: collect
 
 on:
-  schedule:
-    # minute 7, not 0: scheduled runs queue up badly at the top of the hour
-    - cron: "7 * * * *"
+
   workflow_dispatch:
 
 concurrency:
