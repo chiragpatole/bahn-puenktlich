@@ -7,7 +7,7 @@ out of DB's published figure. This project reports both:
 punctuality_db               punctual / stops that ran         (DB's way)
 punctuality_incl_cancelled   punctual / all planned stops      (a cancelled train is not on time)
 
-Kept free of Databricks imports so the tests can run it on a laptop.
+
 """
 
 import csv
@@ -50,8 +50,7 @@ def station_rows(path):
 
 def _berlin_epoch(ts):
     col = F.col(ts) if isinstance(ts, str) else ts
-    # from_utc_timestamp shifts the instant by Berlin's offset at that instant;
-    # unix_timestamp of the result is then "Berlin wall clock as seconds".
+ 
     return F.unix_timestamp(F.from_utc_timestamp(col, "Europe/Berlin"))
 
 
@@ -211,3 +210,4 @@ def collection_health(events, stations, now=None):
         .withColumn("stops", F.coalesce(F.col("stops"), F.lit(0)))
     )
 
+#END_chirag
