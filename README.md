@@ -112,6 +112,7 @@ In Databricks, run the two SQL files in `setup/`, then create a pipeline with th
 - 25 stations, chosen as the largest hubs plus the Berlin area. These are not DB's network-wide numbers and should not be compared with them one to one.
 - When the collector misses a run, a stop keeps its last known state. A delay reported only in the missed hour is lost. `collection_health` shows gaps per station and day.
 - Long-distance trains have no line number in the data, so the line ranking covers regional trains, S-Bahn and FlixTrain.
+- 13 to 16 October 2026 are undercounted. The collector started on 13 October and began polling the S-Bahn parts of big stations on 16 October. On those days a station's partial collector day replaces its full archive day and is then dropped as incomplete. The fix is to check completeness per source before choosing one.
 
 ## Data and licence
 
